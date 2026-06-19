@@ -120,12 +120,79 @@ def test_corpus_field_is_first_class(tmp_path: Path):
     assert any(r["corpus_hint"] == corpus.FICTION for r in rows)
 
 
+def test_rescan_catches_new_books(tmp_path: Path):
+    lib = tmp_path / "library"
+    lib.mkdir()
+    _make_library(lib)
+    db = tmp_path / "catalog.sqlite"
+    kw = dict(db_path=str(db), csv_path=None, exclude_globs=[],
+              max_hash_bytes=0, follow_symlinks=False, log=lambda *a, **k: None)
+
+    first = run_inventory(roots=[str(lib)], **kw)
+
+    # Drop in a new book and re-scan.
+    (lib / "Nonfiction" / "new_arrival.epub").write_bytes(b"brand-new-book")
+    second = run_inventory(roots=[str(lib)], **kw)
+
+    assert second["total_files"] == first["total_files"] + 1
+    assert second["files_hashed_this_run"] == 1  # only the new file hashed
+    assert second["missing"] == 0
+
+
+def test_missing_flag_and_prune(tmp_path: Path):
+    lib = tmp_path / "library"
+    lib.mkdir()
+    _make_library(lib)
+    db = tmp_path / "catalog.sqlite"
+    kw = dict(db_path=str(db), csv_path=None, exclude_globs=[],
+              max_hash_bytes=0, follow_symlinks=False, log=lambda *a, **k: None)
+
+    first = run_inventory(roots=[str(lib)], **kw)
+
+    # Delete a book; rescan WITHOUT prune -> flagged, not removed.
+    (lib / "Nonfiction" / "guns.epub").unlink()
+    flagged = run_inventory(roots=[str(lib)], **kw)
+    assert flagged["missing"] == 1
+    assert flagged["total_files"] == first["total_files"]  # row retained
+    with Catalog(db) as cat:
+        gone = [r for r in cat.iter_rows() if r["filename"] == "guns.epub"]
+        assert len(gone) == 1 and gone[0]["missing_since"] is not None
+
+    # Rescan WITH prune -> row removed.
+    pruned = run_inventory(roots=[str(lib)], prune=True, **kw)
+    assert pruned["pruned"] == 1
+    assert pruned["total_files"] == first["total_files"] - 1
+
+
+def test_reappearing_file_clears_missing(tmp_path: Path):
+    lib = tmp_path / "library"
+    lib.mkdir()
+    _make_library(lib)
+    db = tmp_path / "catalog.sqlite"
+    kw = dict(db_path=str(db), csv_path=None, exclude_globs=[],
+              max_hash_bytes=0, follow_symlinks=False, log=lambda *a, **k: None)
+    run_inventory(roots=[str(lib)], **kw)
+
+    target = lib / "Nonfiction" / "guns.epub"
+    content = target.read_bytes()
+    target.unlink()
+    assert run_inventory(roots=[str(lib)], **kw)["missing"] == 1
+
+    target.write_bytes(content)  # it comes back
+    again = run_inventory(roots=[str(lib)], **kw)
+    assert again["missing"] == 0
+    with Catalog(db) as cat:
+        row = [r for r in cat.iter_rows() if r["filename"] == "guns.epub"][0]
+        assert row["missing_since"] is None
+
+
 def _run_all():
     import tempfile
     test_classify()
     test_corpus_hint_nonfiction_beats_fiction()
     for fn in (test_run_inventory_full, test_incremental_rescan_is_cheap,
-               test_corpus_field_is_first_class):
+               test_corpus_field_is_first_class, test_rescan_catches_new_books,
+               test_missing_flag_and_prune, test_reappearing_file_clears_missing):
         with tempfile.TemporaryDirectory() as d:
             fn(Path(d))
     print("All inventory smoke tests passed.")

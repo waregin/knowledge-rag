@@ -16,7 +16,7 @@ import sqlite3
 from pathlib import Path
 from typing import Iterable, Iterator
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 # Columns that make up a file row, in stable order (also the CSV header).
 FILE_COLUMNS = [
@@ -38,6 +38,7 @@ FILE_COLUMNS = [
     "run_id",        # last inventory run that touched this row
     "first_seen",    # ISO timestamp first inventoried
     "last_seen",     # ISO timestamp last inventoried
+    "missing_since", # ISO timestamp the file stopped appearing in scans; NULL=present
     "error",         # per-file error message, if any
 ]
 
@@ -78,6 +79,7 @@ CREATE TABLE IF NOT EXISTS files (
     run_id       TEXT,
     first_seen   TEXT,
     last_seen    TEXT,
+    missing_since TEXT,
     error        TEXT
 );
 
@@ -109,11 +111,18 @@ class Catalog:
         self.conn.execute("PRAGMA journal_mode=WAL;")
         self.conn.execute("PRAGMA synchronous=NORMAL;")
         self.conn.executescript(_SCHEMA)
+        self._migrate()
         self.conn.execute(
-            "INSERT OR IGNORE INTO meta(key, value) VALUES('schema_version', ?)",
+            "INSERT OR REPLACE INTO meta(key, value) VALUES('schema_version', ?)",
             (str(SCHEMA_VERSION),),
         )
         self.conn.commit()
+
+    def _migrate(self) -> None:
+        """Bring an older catalog up to the current schema, idempotently."""
+        cols = {r["name"] for r in self.conn.execute("PRAGMA table_info(files)")}
+        if "missing_since" not in cols:  # schema v1 -> v2
+            self.conn.execute("ALTER TABLE files ADD COLUMN missing_since TEXT")
 
     # -- run bookkeeping ---------------------------------------------------
     def start_run(self, run_id: str, started_at: str, roots_json: str) -> None:
@@ -131,6 +140,51 @@ class Catalog:
             (finished_at, files_seen, files_hashed, bytes_total, errors, run_id),
         )
         self.conn.commit()
+
+    # -- missing / prune (deletes & moves) --------------------------------
+    @staticmethod
+    def _roots_clause(roots: list[str]) -> tuple[str, list[str]]:
+        placeholders = ",".join("?" for _ in roots)
+        return placeholders, list(roots)
+
+    def count_missing(self, run_id: str, roots: list[str]) -> int:
+        """Rows under the scanned roots that this run did NOT see."""
+        if not roots:
+            return 0
+        ph, params = self._roots_clause(roots)
+        row = self.conn.execute(
+            f"SELECT COUNT(*) n FROM files "
+            f"WHERE run_id != ? AND root IN ({ph})",
+            [run_id, *params],
+        ).fetchone()
+        return row["n"]
+
+    def mark_missing(self, run_id: str, roots: list[str], now: str) -> int:
+        """Stamp ``missing_since`` on rows not seen this run. Returns count newly
+        marked. Files seen this run already had ``missing_since`` cleared on
+        upsert, so a file that reappears is automatically un-marked."""
+        if not roots:
+            return 0
+        ph, params = self._roots_clause(roots)
+        cur = self.conn.execute(
+            f"UPDATE files SET missing_since=? "
+            f"WHERE run_id != ? AND missing_since IS NULL AND root IN ({ph})",
+            [now, run_id, *params],
+        )
+        self.conn.commit()
+        return cur.rowcount
+
+    def prune_missing(self, run_id: str, roots: list[str]) -> int:
+        """Hard-delete rows under the scanned roots not seen this run."""
+        if not roots:
+            return 0
+        ph, params = self._roots_clause(roots)
+        cur = self.conn.execute(
+            f"DELETE FROM files WHERE run_id != ? AND root IN ({ph})",
+            [run_id, *params],
+        )
+        self.conn.commit()
+        return cur.rowcount
 
     # -- incremental lookups ----------------------------------------------
     def existing_signature(self, path: str) -> tuple[int, float, str | None] | None:

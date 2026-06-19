@@ -35,6 +35,10 @@ python3 scripts/run_inventory.py --config config/pipeline.local.json
 Outputs land in `data/` (gitignored): `catalog.sqlite` (authoritative, with a
 `duplicate_groups` view) and `inventory.csv` (flat export for review).
 
+Re-running is incremental and picks up new books automatically; deletes/moves
+are flagged (or removed with `--prune`). Schedule it weekly with cron or a
+systemd timer — see [`deploy/README.md`](deploy/README.md).
+
 Run tests:
 
 ```bash

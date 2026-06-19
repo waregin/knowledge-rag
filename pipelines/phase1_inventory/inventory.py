@@ -58,12 +58,15 @@ def run_inventory(
     follow_symlinks: bool,
     do_hash: bool = True,
     rehash: bool = False,
+    prune: bool = False,
     limit: int | None = None,
     progress_every: int = 500,
     log=print,
 ) -> dict:
     """Walk roots and populate the catalog. Returns a summary dict."""
-    run_id = datetime.now(timezone.utc).strftime("inv-%Y%m%dT%H%M%SZ")
+    # Microsecond precision so back-to-back runs get distinct ids (the
+    # incremental missing/prune logic keys off run_id).
+    run_id = datetime.now(timezone.utc).strftime("inv-%Y%m%dT%H%M%S-%fZ")
     started = _now_iso()
 
     resolved_roots = []
@@ -117,7 +120,25 @@ def run_inventory(
             files_seen=files_seen, files_hashed=files_hashed,
             bytes_total=bytes_total, errors=errors,
         )
+
+        # Detect deletes/moves: rows under the just-scanned roots that this run
+        # did not touch. Skipped when --limit is used (a partial scan would
+        # wrongly flag the un-scanned remainder as missing).
+        scanned_roots = [str(r) for r in resolved_roots]
+        missing = pruned = 0
+        if limit is None:
+            missing = cat.count_missing(run_id, scanned_roots)
+            if prune:
+                pruned = cat.prune_missing(run_id, scanned_roots)
+            else:
+                cat.mark_missing(run_id, scanned_roots, _now_iso())
+        elif prune:
+            log("  [skip] --prune ignored because --limit is set "
+                "(partial scan).")
+
         summary = cat.summary()
+        summary["missing"] = missing
+        summary["pruned"] = pruned
         summary["run_id"] = run_id
         summary["files_hashed_this_run"] = files_hashed
         summary["errors"] = errors
@@ -195,6 +216,7 @@ def _build_row(cat: Catalog, fpath: Path, root: Path, run_id: str, *,
         "run_id": run_id,
         "first_seen": first_seen,
         "last_seen": now,
+        "missing_since": None,   # seeing the file clears any prior missing flag
         "error": error,
         "_hashed_now": hashed_now,
     }
@@ -219,6 +241,11 @@ def _print_summary(summary: dict, log=print) -> None:
     log(f"  total size              : {_human_bytes(summary['total_bytes'])}")
     log(f"  exact-duplicate groups  : {summary['duplicate_groups']:,} "
         f"({summary['files_in_dup_groups']:,} files)")
+    if summary.get("pruned"):
+        log(f"  pruned (deleted rows)   : {summary['pruned']:,}")
+    else:
+        log(f"  missing (not seen now)  : {summary.get('missing', 0):,}"
+            f"  [flagged; re-run with --prune to remove]")
     log(f"  errors                  : {summary['errors']:,}")
     log(f"  elapsed                 : {summary['elapsed_sec']}s")
     log("  by category:")
@@ -247,6 +274,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
                    help="Skip content hashing (fast path census only).")
     p.add_argument("--rehash", action="store_true",
                    help="Re-hash every file even if size/mtime are unchanged.")
+    p.add_argument("--prune", action="store_true",
+                   help="Delete catalog rows for files no longer on disk under "
+                        "the scanned roots (handles deletes/moves). Without it, "
+                        "such rows are only flagged via missing_since.")
     p.add_argument("--max-hash-mb", type=float, default=None,
                    help="Skip hashing files larger than N MB (still inventoried).")
     p.add_argument("--limit", type=int, default=None,
@@ -285,6 +316,7 @@ def main(argv: list[str] | None = None) -> int:
         follow_symlinks=cfg.get("follow_symlinks", False),
         do_hash=not args.no_hash,
         rehash=args.rehash,
+        prune=args.prune,
         limit=args.limit,
         log=log,
     )

@@ -1,0 +1,14 @@
+[Unit]
+Description=Weekly knowledge-rag inventory scan
+Documentation=https://github.com/waregin/knowledge-rag
+
+[Timer]
+# Sundays at 03:00 local time. Tweak to taste (e.g. "daily", "Mon *-*-* 02:00").
+OnCalendar=Sun *-*-* 03:00:00
+# Run on next boot if the machine was off at the scheduled time.
+Persistent=true
+# Avoid every machine hammering disk at exactly 03:00.
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

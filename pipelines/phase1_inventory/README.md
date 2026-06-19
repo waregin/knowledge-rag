@@ -31,7 +31,23 @@ python3 scripts/run_inventory.py --config config/pipeline.local.json
 ```
 
 Useful flags: `--no-hash` (fast census first), `--rehash`, `--max-hash-mb N`
-(skip hashing huge audiobooks), `--limit N` (test on a slice).
+(skip hashing huge audiobooks), `--prune` (handle deletes/moves, below),
+`--limit N` (test on a slice).
+
+## Re-running & scheduling
+
+Re-running is the intended way to pick up new books — the scan is incremental:
+
+- **New file** → inserted and hashed.
+- **Unchanged file** (same size+mtime) → hash reused, no re-hash.
+- **Changed file** → re-hashed.
+- **Deleted / moved file** → the row is *flagged* `missing_since=<timestamp>`
+  (a moved file also reappears as a new row at the new path, same `sha256`).
+  Pass **`--prune`** to instead delete rows for files no longer present under
+  the scanned roots. A file that comes back has its `missing_since` cleared.
+
+Because it's idempotent, it drops straight into cron or a systemd timer — see
+[`deploy/README.md`](../../deploy/README.md) for a weekly-scan setup.
 
 ## What it captures (per file)
 
