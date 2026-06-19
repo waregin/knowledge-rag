@@ -40,6 +40,12 @@ def test_classify():
     assert formats.classify("a.cbz").rag_eligible is False
     assert formats.classify("a.pdf").category == formats.CAT_PDF
     assert formats.classify("noext").fmt == "unknown"
+    # Archives get their own category (may wrap books; not RAG-eligible as-is).
+    assert formats.classify("books.zip").category == formats.CAT_ARCHIVE
+    assert formats.classify("books.zip").rag_eligible is False
+    # Kindle/Mobipocket sidecars are metadata, not unknown "other".
+    for sidecar in ("book.azw.res", "book.mbpv2", "x.voucher", "x.phl", "x.apnx"):
+        assert formats.classify(sidecar).category == formats.CAT_METADATA
 
 
 def test_corpus_hint_nonfiction_beats_fiction():

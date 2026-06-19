@@ -22,7 +22,8 @@ CAT_EBOOK_TEXT = "ebook_text"      # reflowable text ebooks (epub, mobi, ...)
 CAT_PDF = "pdf"                    # PDFs: usually text, sometimes scanned
 CAT_EBOOK_IMAGE = "ebook_image"    # comic / image archives (cbz, cbr, ...)
 CAT_AUDIO = "audio"               # audiobooks
-CAT_METADATA = "metadata"          # sidecars (opf, cover.jpg, ...)
+CAT_ARCHIVE = "archive"            # zip/rar/... — may wrap books; triage by hand
+CAT_METADATA = "metadata"          # sidecars (opf, cover.jpg, Kindle .res, ...)
 CAT_OTHER = "other"               # anything unrecognized
 
 # extension (lowercase, no dot) -> (fmt, category, rag_eligible)
@@ -72,10 +73,27 @@ _register(CAT_AUDIO, False, {
     "aa": "aa", "aax": "aax",
 })
 
+# Archives — opaque by extension. They may wrap real books (a zipped folder of
+# EPUBs) or be junk; we surface them as their own category for hand-triage
+# rather than burying them in "other". Not RAG-eligible without extraction.
+_register(CAT_ARCHIVE, False, {
+    "zip": "zip", "rar": "rar", "7z": "7z",
+    "gz": "gz", "tgz": "gz", "bz2": "bz2", "tar": "tar", "xz": "xz",
+})
+
 # Sidecar / metadata files commonly found in Calibre libraries.
 _register(CAT_METADATA, False, {
     "opf": "opf", "jpg": "jpg", "jpeg": "jpg", "png": "png", "gif": "gif",
+    "tif": "tif", "tiff": "tif",
     "nfo": "nfo", "json": "json", "xml": "xml", "cue": "cue",
+})
+
+# Kindle / Mobipocket companion sidecars that sit next to a book file:
+# resources, annotations, popular-highlights, page maps, DRM vouchers. These
+# are not books and not RAG-eligible — just bookkeeping the device left behind.
+_register(CAT_METADATA, False, {
+    "res": "res", "mbp": "mbp", "mbpv2": "mbpv2",
+    "phl": "phl", "apnx": "apnx", "voucher": "voucher", "tan": "tan",
 })
 
 

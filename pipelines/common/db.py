@@ -28,7 +28,7 @@ FILE_COLUMNS = [
     "filename",
     "ext",
     "fmt",           # normalized format token
-    "category",      # ebook_text | pdf | ebook_image | audio | metadata | other
+    "category",      # ebook_text | pdf | ebook_image | audio | archive | metadata | other
     "rag_eligible",  # 0/1 — text-extractable for the RAG as-is
     "size_bytes",
     "mtime",         # source file mtime (epoch seconds)

@@ -9,7 +9,7 @@
   ],
   "exclude_globs": [
     ".git", ".Trash-*", "@eaDir", "lost+found", "__MACOSX",
-    ".DS_Store", "Thumbs.db", "*.tmp", "*.part"
+    ".DS_Store", "Thumbs.db", "*.tmp", "*.part", "*.crdownload", "*.opdownload"
   ],
   "max_hash_bytes": 0,
   "follow_symlinks": false,

@@ -25,7 +25,8 @@ DEFAULT_CONFIG = {
     # Directory/file name fragments to skip outright (junk, not library data).
     "exclude_globs": [
         ".git", ".Trash-*", "@eaDir", "lost+found", "__MACOSX",
-        ".DS_Store", "Thumbs.db", "*.tmp", "*.part",
+        ".DS_Store", "Thumbs.db", "*.tmp", "*.part", "*.crdownload",
+        "*.opdownload",
     ],
     # Skip hashing files larger than this (bytes); they are still inventoried
     # with sha256=None. 0 or null = always hash. Default 0 (hash everything).
