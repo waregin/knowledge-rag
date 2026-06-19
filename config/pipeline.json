@@ -1,0 +1,18 @@
+{
+  "roots": [
+    "/REPLACE/with/path/to/your/ebooks"
+  ],
+  "previously_skipped_folders": [
+    "15000KindleBooks",
+    "AudioBooks",
+    "ComicBookPDFs"
+  ],
+  "exclude_globs": [
+    ".git", ".Trash-*", "@eaDir", "lost+found", "__MACOSX",
+    ".DS_Store", "Thumbs.db", "*.tmp", "*.part"
+  ],
+  "max_hash_bytes": 0,
+  "follow_symlinks": false,
+  "db_path": "data/catalog.sqlite",
+  "csv_path": "data/inventory.csv"
+}
