@@ -1,0 +1,17 @@
+# Inventory outputs are local and large — never commit them.
+data/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.csv
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/

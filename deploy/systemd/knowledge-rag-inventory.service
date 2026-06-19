@@ -1,0 +1,16 @@
+[Unit]
+Description=knowledge-rag Phase 1 inventory scan (complete library census)
+Documentation=https://github.com/waregin/knowledge-rag
+After=network.target local-fs.target
+
+[Service]
+Type=oneshot
+# Adjust if you cloned the repo somewhere other than ~/knowledge-rag.
+WorkingDirectory=%h/knowledge-rag
+# Point --config at your real library (see config/pipeline.local.json).
+# Add --prune here once you're happy with how deletes/moves are flagged.
+ExecStart=/usr/bin/python3 scripts/run_inventory.py --config config/pipeline.local.json
+# Be a good citizen on a desktop box: low CPU/IO priority.
+Nice=10
+IOSchedulingClass=idle
+# Output is captured by the journal: journalctl --user -u knowledge-rag-inventory
