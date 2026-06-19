@@ -16,7 +16,7 @@ import sqlite3
 from pathlib import Path
 from typing import Iterable, Iterator
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 # Columns that make up a file row, in stable order (also the CSV header).
 FILE_COLUMNS = [
@@ -97,6 +97,26 @@ CREATE VIEW IF NOT EXISTS duplicate_groups AS
     WHERE sha256 IS NOT NULL
     GROUP BY sha256
     HAVING COUNT(*) > 1;
+
+-- Phase 2 (deduplication) decisions. Kept in its own table (not on `files`)
+-- so that incremental inventory rescans never overwrite dedup-derived data.
+-- Rebuilt from scratch on each dedup run; no files are deleted by Phase 2.
+CREATE TABLE IF NOT EXISTS dedup_decisions (
+    file_id           INTEGER PRIMARY KEY,   -- -> files.id
+    title_norm        TEXT,                  -- normalized title (from filename)
+    work_key          TEXT,                  -- order-independent token key
+    group_id          TEXT,                  -- stable id shared by a dup group
+    group_type        TEXT,                  -- exact | work_variant
+    role              TEXT,                  -- keep | drop | review
+    canonical_file_id INTEGER,               -- the file kept for this group
+    reason            TEXT,
+    run_id            TEXT,
+    decided_at        TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_dedup_group ON dedup_decisions(group_id);
+CREATE INDEX IF NOT EXISTS idx_dedup_role  ON dedup_decisions(role);
+CREATE INDEX IF NOT EXISTS idx_dedup_work  ON dedup_decisions(work_key);
 """
 
 
@@ -217,6 +237,38 @@ class Catalog:
 
     def commit(self) -> None:
         self.conn.commit()
+
+    # -- dedup (Phase 2) ---------------------------------------------------
+    def files_for_dedup(self) -> list:
+        """All files with the fields Phase 2 needs, ordered by path."""
+        return self.conn.execute(
+            "SELECT id, path, rel_path, top_folder, filename, ext, fmt, "
+            "category, rag_eligible, size_bytes, sha256, corpus "
+            "FROM files ORDER BY path"
+        ).fetchall()
+
+    def replace_dedup_decisions(self, rows: list[dict]) -> None:
+        """Atomically rebuild the dedup_decisions table from ``rows``."""
+        cols = ["file_id", "title_norm", "work_key", "group_id", "group_type",
+                "role", "canonical_file_id", "reason", "run_id", "decided_at"]
+        placeholders = ",".join("?" for _ in cols)
+        with self.conn:  # transaction
+            self.conn.execute("DELETE FROM dedup_decisions")
+            self.conn.executemany(
+                f"INSERT INTO dedup_decisions ({','.join(cols)}) "
+                f"VALUES ({placeholders})",
+                [[r.get(c) for c in cols] for r in rows],
+            )
+
+    def dedup_decision_rows(self) -> list:
+        """Join decisions back to file paths/sizes for reporting/export."""
+        return self.conn.execute(
+            "SELECT d.group_id, d.group_type, d.role, d.canonical_file_id, "
+            "d.reason, d.work_key, f.id AS file_id, f.path, f.fmt, "
+            "f.size_bytes, f.sha256 "
+            "FROM dedup_decisions d JOIN files f ON f.id = d.file_id "
+            "ORDER BY d.group_type, d.group_id, d.role DESC, f.path"
+        ).fetchall()
 
     # -- reporting ---------------------------------------------------------
     def summary(self) -> dict:
