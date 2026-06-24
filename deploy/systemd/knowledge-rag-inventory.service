@@ -6,7 +6,7 @@ After=network.target local-fs.target
 [Service]
 Type=oneshot
 # Adjust if you cloned the repo somewhere other than ~/knowledge-rag.
-WorkingDirectory=%h/knowledge-rag
+WorkingDirectory=%h/Documents/GitHub/knowledge-rag
 # Point --config at your real library (see config/pipeline.local.json).
 # Add --prune here once you're happy with how deletes/moves are flagged.
 ExecStart=/usr/bin/python3 scripts/run_inventory.py --config config/pipeline.local.json
